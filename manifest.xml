@@ -1,0 +1,27 @@
+<package>
+  <description brief="gazebo_jrl_plugin">
+
+     gazebo_jrl_plugin
+
+  </description>
+  <author>Sébastien Dalibard</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/gazebo_jrl_plugin</url>
+
+  <export>
+    <cpp cflags="-I${prefix}/include" lflags="-Wl,-rpath,${prefix}/lib -L${prefix}/lib" />
+    <gazebo plugin_path="${prefix}/lib" />
+  </export>
+
+  <depend package="gazebo"/>
+  <depend package="gazebo_plugins"/>
+  <depend package="gazebo_tools"/>
+  <depend package="opende"/>
+  <depend package="roscpp"/>
+  <depend package="jrl_dynamics_urdf"/>
+  <depend package="jrl_controller_manager"/>
+
+</package>
+
+
