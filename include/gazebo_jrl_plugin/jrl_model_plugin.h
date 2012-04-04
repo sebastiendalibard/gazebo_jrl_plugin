@@ -8,6 +8,7 @@
 #include <gazebo/World.hh>
 #include <gazebo/Param.hh>
 #include <gazebo/Joint.hh>
+#include <gazebo/Body.hh>
 
 #include <ros/ros.h>
 
@@ -38,7 +39,13 @@ namespace gazebo
 
     Model *parent_model_;
 
+    /// \brief vector of actuated joints
     std::vector<gazebo::Joint*> joints_;
+
+    /// \brief link corresponding to Free-flyer joint in jrl_robot
+    /// TODO: Not very generic for now, implement proper parsing to
+    /// check that the first joint in jrl_robot is actually a FF.
+    gazebo::Body* base_link_;
 
     ros::NodeHandle* rosnode_;
     

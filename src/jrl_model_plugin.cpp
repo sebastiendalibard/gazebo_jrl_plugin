@@ -25,7 +25,8 @@ namespace gazebo{
   GZ_REGISTER_DYNAMIC_CONTROLLER("gazebo_jrl_plugin", JrlModelPlugin);
 
   JrlModelPlugin::JrlModelPlugin(Entity *parent)
-    : Controller(parent)
+    : Controller(parent),
+      base_link_(NULL)
   {
     parent_model_ = dynamic_cast<Model*>(parent);
 
@@ -83,6 +84,13 @@ namespace gazebo{
     std::cout << "Number of DoFs: " << jrl_dynamic_robot_->numberDof()
 	      << "\nNumber of joints: " << joint_vector.size()
 	      << std::endl;
+    
+    //TODO: Clean the hardcoded base link lookup.
+    std::string base_link_name = std::string("base_link");
+    base_link_ = parent_model_->GetBody(base_link_name);
+    if(!base_link_) {
+      std::cerr << "JrlModelPlugin::LoadChild(): Failed to find base_link\n";
+    }
 
     for(unsigned int i = 0; i< joint_vector.size();++i)
       {
@@ -127,7 +135,7 @@ namespace gazebo{
 
     ROS_DEBUG("gazebo jrl plugin got urdf file from param server, parsing it...");
     jrl::dynamics::urdf::Parser parser;
-    jrl_dynamic_robot_ = parser.buildFromXmlString(urdf_string,"base_joint");
+    jrl_dynamic_robot_ = parser.parseStream(urdf_string,"free_flyer_joint");
   }
 
 
@@ -151,7 +159,27 @@ namespace gazebo{
     vectorN currentVelocity =
       jrl_dynamic_robot_->currentVelocity();
 
-    unsigned int dof = 6; //Skip free flyer 
+    // First deal with free-flyer
+    if(base_link_) {
+      // Position
+      gazebo::Pose3d pose = base_link_->GetWorldPose();
+      gazebo::Vector3 t = pose.pos;
+      gazebo::Quatern q = pose.rot;
+      gazebo::Vector3 r = q.GetAsEuler();
+      for(unsigned int i = 0; i < 3; ++i) {
+	currentConfig(i) = t[i];
+	currentConfig(3+i) = r[i];
+      }
+      // Velocity
+      gazebo::Vector3 l_v = base_link_->GetRelativeLinearVel();
+      gazebo::Vector3 a_v = base_link_->GetRelativeAngularVel();
+      for(unsigned int i = 0; i < 3; ++i) {
+	currentVelocity(i) = l_v[i];
+	currentVelocity(i+3) = a_v[i];
+      }
+    }
+
+    unsigned int dof = 6; //After free-flyer, deal with actuated joints
     for (unsigned int i = 0; i < joints_.size(); ++i)
       {
 	Joint *current_joint = joints_[i];
@@ -190,7 +218,7 @@ namespace gazebo{
     //Take-in command as joint efforts
 
     dof = 0;
-    for (unsigned int i = 1; i < joints_.size(); ++i)
+    for (unsigned int i = 0; i < joints_.size(); ++i)
       {
 	Joint *current_joint = joints_[i];
 	if (!current_joint)
