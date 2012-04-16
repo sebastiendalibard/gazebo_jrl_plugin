@@ -2,6 +2,7 @@
 #define GAZEBO_JRL_MODEL_PLUGIN_HH
 
 #include <vector>
+#include <map>
 
 #include <gazebo/Controller.hh>
 #include <gazebo/Body.hh>
@@ -9,7 +10,6 @@
 #include <gazebo/Param.hh>
 #include <gazebo/Joint.hh>
 #include <gazebo/Body.hh>
-
 #include <ros/ros.h>
 
 #include <abstract-robot-dynamics/abstract-robot-dynamics.hh>
@@ -40,7 +40,7 @@ namespace gazebo
     Model *parent_model_;
 
     /// \brief vector of actuated joints
-    std::vector<gazebo::Joint*> joints_;
+    std::map<gazebo::Joint*,CjrlJoint*> joints_;
 
     /// \brief link corresponding to Free-flyer joint in jrl_robot
     /// TODO: Not very generic for now, implement proper parsing to

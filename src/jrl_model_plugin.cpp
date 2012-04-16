@@ -57,22 +57,20 @@ namespace gazebo{
     robotParam = robotParamP->GetValue();
     robotNamespaceP->Load(node);
 
-    if (!ros::isInitialized())
-      {
-	int argc = 0;
-	char** argv = NULL;
-	ros::init(argc,
-		  argv,
-		  "gazebo",
-		  ros::init_options::NoSigintHandler|ros::init_options::AnonymousName);
-      }
+    if (!ros::isInitialized()) {
+      int argc = 0;
+      char** argv = NULL;
+      ros::init(argc,
+		argv,
+		"gazebo",
+		ros::init_options::NoSigintHandler|ros::init_options::AnonymousName);
+    }
     rosnode_ = new ros::NodeHandle(robotNamespace);
-    ROS_INFO("starting gazebo_ros_controller_manager plugin in ns: %s",
-	     robotNamespace.c_str());
+    ROS_INFO("starting gazebo jrl_controller_manager plugin");
 
     readUrdf(node);
 
-    if(!jrl_dynamic_robot_){
+    if(!jrl_dynamic_robot_) {
       std::cerr << "jrl_dynamic_robot not initialized.\n";
       return;
     }
@@ -92,20 +90,20 @@ namespace gazebo{
       std::cerr << "JrlModelPlugin::LoadChild(): Failed to find base_link\n";
     }
 
-    for(unsigned int i = 0; i< joint_vector.size();++i)
-      {
-	std::string joint_name = joint_vector[i]->getName();
-	gazebo::Joint *joint = parent_model_->GetJoint(joint_name);
+    for(std::vector<CjrlJoint *>::iterator joint_it = joint_vector.begin(); 
+	joint_it != joint_vector.end();
+	++joint_it) {
+      std::string joint_name = (*joint_it)->getName();
+      gazebo::Joint *joint = parent_model_->GetJoint(joint_name);
 	if (joint)
 	  {
-	    this->joints_.push_back(joint);
+	    joints_[joint] = *joint_it;
 	  }
 	else
 	  {
 	    std::cout << "A joint named "
 		      << joint_name
 		      << " is not part of Mechanism Controlled joints.\n";
-	    this->joints_.push_back(NULL);
 	  }
 	
       }
@@ -135,7 +133,7 @@ namespace gazebo{
 
     ROS_DEBUG("gazebo jrl plugin got urdf file from param server, parsing it...");
     jrl::dynamics::urdf::Parser parser;
-    jrl_dynamic_robot_ = parser.parseStream(urdf_string,"free_flyer_joint");
+    jrl_dynamic_robot_ = parser.parseStream(urdf_string,"base_footprint_joint");
   }
 
 
@@ -153,81 +151,76 @@ namespace gazebo{
 
     if (gazebo::Simulator::Instance()->IsPaused()) return;
 
-    vectorN currentConfig = 
+    vectorN current_config = 
       jrl_dynamic_robot_->currentConfiguration();
 
-    vectorN currentVelocity =
+    vectorN current_velocity =
       jrl_dynamic_robot_->currentVelocity();
 
     // First deal with free-flyer
+    // TODO: check that the first 6 DoF correspond to a free-flyer joint
     if(base_link_) {
       // Position
-      gazebo::Pose3d pose = base_link_->GetWorldPose();
-      gazebo::Vector3 t = pose.pos;
-      gazebo::Quatern q = pose.rot;
-      gazebo::Vector3 r = q.GetAsEuler();
+      Pose3d pose = base_link_->GetWorldPose();
+      Vector3 t = pose.pos;
+      Quatern q = pose.rot;
+      Vector3 r = q.GetAsEuler();
       for(unsigned int i = 0; i < 3; ++i) {
-	currentConfig(i) = t[i];
-	currentConfig(3+i) = r[i];
+	current_config(i) = t[i];
+	current_config(3+i) = r[i];
       }
       // Velocity
-      gazebo::Vector3 l_v = base_link_->GetRelativeLinearVel();
-      gazebo::Vector3 a_v = base_link_->GetRelativeAngularVel();
+      Vector3 l_v = base_link_->GetRelativeLinearVel();
+      Vector3 a_v = base_link_->GetRelativeAngularVel();
       for(unsigned int i = 0; i < 3; ++i) {
-	currentVelocity(i) = l_v[i];
-	currentVelocity(i+3) = a_v[i];
+	current_velocity(i) = l_v[i];
+	current_velocity(i+3) = a_v[i];
       }
     }
 
-    unsigned int dof = 6; //After free-flyer, deal with actuated joints
-    for (unsigned int i = 0; i < joints_.size(); ++i)
-      {
-	Joint *current_joint = joints_[i];
-	if (!current_joint)
-	  continue;
+    //After free-flyer, deal with actuated joints
+    for (std::map<Joint*,CjrlJoint*>::iterator joint_it = joints_.begin();
+	 joint_it != joints_.end();
+	 ++joint_it) {
+      Joint * gazebo_joint = (*joint_it).first;
 
-	switch(current_joint->GetType())
-	  //For now, only deal with 1 dof rotation joints. 
-	  {
-	  case Joint::HINGE: {
-	    currentConfig[dof] += 
-	      angles::shortest_angular_distance(currentConfig[dof],
-						current_joint->GetAngle(0).GetAsRadian());
-	    currentVelocity[dof] = current_joint->GetVelocity(0);
+      unsigned int joint_pos = ((*joint_it).second)->rankInConfiguration();
+      switch(gazebo_joint->GetType())
+	//For now, only deal with 1 dof rotation joints. 
+	{
+	case Joint::HINGE: {
+	  current_config(joint_pos) += 
+	    angles::shortest_angular_distance(current_config(joint_pos),
+					      gazebo_joint->GetAngle(0).GetAsRadian());
+	  current_velocity(joint_pos) = gazebo_joint->GetVelocity(0);
+	  break;
+	}
+	  //TODO: Other cases
+	  /*
+	    case Joint::SLIDER: { 
 	    ++dof;
 	    break;
-	  }
-	    //TODO: Other cases
-	    /*
-	      case Joint::SLIDER: { 
-	      ++dof;
-	      break;
-	      }
-	    */
-	  default:
-	    abort();
-	  }
-      }
+	    }
+	  */
+	default:
+	  abort();
+	}
+    }
 
-
-    jrl_dynamic_robot_->currentConfiguration(currentConfig);
-    jrl_dynamic_robot_->currentVelocity(currentVelocity);
+    jrl_dynamic_robot_->currentConfiguration(current_config);
+    jrl_dynamic_robot_->currentVelocity(current_velocity);
     //Publish joint states and get command
     cm_->update();
   
     //Take-in command as joint efforts
-
-    dof = 0;
-    for (unsigned int i = 0; i < joints_.size(); ++i)
-      {
-	Joint *current_joint = joints_[i];
-	if (!current_joint)
-	  continue;
-
-	double effort = cm_->command_[dof];
-	current_joint->SetForce(0,effort);
-	++dof;
-      }
+    for (std::map<Joint*,CjrlJoint*>::iterator joint_it = joints_.begin();
+	 joint_it != joints_.end();
+	 ++joint_it) {
+      Joint * gazebo_joint = (*joint_it).first;
+      //TODO: Again, first joint is expected to be free-flyer. Has to be cleaned.
+      double effort = cm_->command_[((*joint_it).second)->rankInConfiguration() - 6];
+      gazebo_joint->SetForce(0,effort);
+    }
 
   }
 
